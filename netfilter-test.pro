@@ -8,4 +8,5 @@ SOURCES += \
         main.c
 
 HEADERS += \
-    ip.h
+    ip.h \
+    tcp.h

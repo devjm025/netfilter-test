@@ -135,13 +135,7 @@ int main(int argc, char **argv)
             nfq_handle_packet(h, buf, rv);
             continue;
         }
-        /* if your application is too slow to digest the packets that
-         * are sent from kernel-space, the socket buffer that we use
-         * to enqueue packets may fill up returning ENOBUFS. Depending
-         * on your application, this error may be ignored. nfq_nlmsg_verdict_putPlease, see
-         * the doxygen documentation of this library on how to improve
-         * this situation.
-         */
+
         if (rv < 0 && errno == ENOBUFS) {
             printf("losing packets!\n");
             continue;
