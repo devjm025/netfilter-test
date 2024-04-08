@@ -1,12 +1,14 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <netinet/in.h>
-#include <linux/types.h>
-#include <linux/netfilter.h>		/* for NF_ACCEPT */
-#include <errno.h>
+#define IPTYPE_TCP              0x06
 
-#include <libnetfilter_queue/libnetfilter_queue.h>
+#include "netfilter.h"
+
+char * restricted_domain;
+int nf_value;
+
+void usage() {
+    printf("syntax: netfilter-test <host>\n");
+    printf("sample: netfilter-test test.gilgil.net\n");
+}
 
 void dump(unsigned char* buf, int size) {
     int i;
@@ -18,6 +20,57 @@ void dump(unsigned char* buf, int size) {
     printf("\n");
 }
 
+void inspect(unsigned char* buf, int size)
+{
+    struct ipv4_hdr *ip_hdr = (ipv4_hdr *)buf;
+    //IP Header//
+    if(ip_hdr->ip_p != IPTYPE_TCP) return;
+    u_int8_t ip_hdr_len = (ip_hdr->VerIHL & 0x0F) * 4;
+    u_int16_t total_len = (ntohs(ip_hdr->ip_len));
+
+    //TCP Header//
+    struct tcp_hdr *tcp_header = (tcp_hdr *)(buf+ ip_hdr_len);
+    u_int8_t tcp_hdr_len = ((tcp_header->data_offset & 0xF0) >> 4) * 4;
+
+    u_int8_t payload_len = total_len - ip_hdr_len - tcp_hdr_len;
+    if(payload_len <= 0) return;
+
+    //TCP Payload//
+    unsigned char *pl = buf + ip_hdr_len+ tcp_hdr_len;
+    int n = payload_len;
+
+    char payloads[n + 1];
+    memcpy(payloads, pl, n);
+    payloads[n] = '\0';
+
+    char *pattern = "Host: ([a-z.0-9]+)";
+
+    regex_t reg;
+    int reti;
+
+    reti = regcomp(&reg, pattern, REG_EXTENDED);
+    if (reti) {
+        fprintf(stderr, "Failed to compile regex pattern\n");
+        exit(1);
+    }
+
+    regmatch_t matches[2];
+    reti = regexec(&reg, payloads, 2, matches, 0);
+    if (!reti) {
+        size_t host_len = matches[1].rm_eo - matches[1].rm_so;
+        char host[host_len + 1];
+        memcpy(host, payloads + matches[1].rm_so, host_len);
+        host[host_len] = '\0';
+        printf("Accessing Host: %s\n", host);
+        if(!strcmp(host, restricted_domain)){
+            nf_value = NF_DROP;
+        }
+
+    }
+    // Free the compiled regex structure
+    regfree(&reg);
+
+}
 
 /* returns packet id */
 static u_int32_t print_pkt (struct nfq_data *tb)
@@ -69,7 +122,7 @@ static u_int32_t print_pkt (struct nfq_data *tb)
     if (ret >= 0)
     {
         printf("payload_len=%d\n", ret);
-        dump(data, ret);
+        inspect(data, ret);
     }
 
     fputc('\n', stdout);
@@ -81,9 +134,10 @@ static u_int32_t print_pkt (struct nfq_data *tb)
 static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
               struct nfq_data *nfa, void *data)
 {
+    nf_value = NF_ACCEPT;
     u_int32_t id = print_pkt(nfa);
     printf("entering callback\n");
-    return nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
+    return nfq_set_verdict(qh, id, nf_value, 0, NULL);
 }
 
 int main(int argc, char **argv)
@@ -94,6 +148,13 @@ int main(int argc, char **argv)
     int fd;
     int rv;
     char buf[4096] __attribute__ ((aligned));
+
+    if (argc != 2) {
+        usage();
+        return false;
+    }
+
+    restricted_domain = argv[1];
 
     printf("opening library handle\n");
     h = nfq_open();

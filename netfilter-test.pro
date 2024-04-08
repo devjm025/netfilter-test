@@ -5,8 +5,9 @@ CONFIG -= qt
 
 SOURCES += \
         ip.cpp \
-        main.c
+        main.cpp
 
 HEADERS += \
     ip.h \
+    netfilter.h \
     tcp.h
