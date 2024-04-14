@@ -43,7 +43,7 @@ void inspect(unsigned char* buf, int size)
     memcpy(payloads, pl, n);
     payloads[n] = '\0';
 
-    char *pattern = "Host: ([a-z.0-9]+)";
+    char *pattern = "Host: ([a-zA-Z0-9\.]+)";
 
     regex_t reg;
     int reti;
